@@ -1,0 +1,171 @@
+---
+title: "exploratory"
+author: "Brian Schousek"
+date: "July 10, 2015"
+output: html_document
+---
+```{r libload,echo =F}
+library(knitr)
+library(plyr)
+prettyK=function(value) {formatC(value,big.mark=",",format='d')}
+
+```
+## Introduction
+
+This report describes exploratory analysis performed in support of the first milestone in the Coursera Data Science Specialization capstone project. The project's end output is a predictive text application implemented in Shiny. 
+
+## Data Sources
+As described in *Task 0 Understanding the problem* we are charged with examining corpora provided by Hans Christensen at [www.corpora.heliohost.org](www.corpora.heliohost.org). The data is collected from a variety of public sources and attempts are made to identify the language of the sources. Although the original source data is tagged for author, source, date among other things, the data we are to use for this exercise has been stripped of the tags. 
+
+The data provided consists of files from four different languages: German, American English, Finnish, and Russian. For each language we are provided with files containing blog entries, Tweets, and news articles. Each file consists of many multiple entries of a given type, with each entry consisting of a paragraph, which may contain multiple sentences.
+
+One could envision increasing the reach of a predictive text program by including in final prediction other sources of text data. For example, [Project Gutenberg](www.gutenberg.org) has for many years provided ebooks from a variety of public domain books. The Python module [NLTK](nltk.org) also provides a multidude of corpora which may be useful. For example [Brown Corpus](http://www.hit.uib.no/icame/brown/bcm.html) is included, which contains text samples ranging from sports articles to Science Fiction novels, all collected during the year 1961. The potential market for the eventual predictive text application in this capstone could easily be targeted by choosing training data from these sources and others to match the target market. 
+
+##Natural Language Processing
+
+As in many of the classes in the Data Science Specialization, natural language processing (NLP) attempts extract features from large amounts of data and summarize them using various techniques to facilitate further analysis. In this specific instance we are charged with using this process to predict words, but other uses can include sentiment analysis, source language detection, detection of academic cheating, and many others.
+
+Common low level NLP tasks include:
+
+1. Sentence Boundary Detection
+2. Tokenization: Deconstructing text into words, phrases, letters etc. 
+3. Part of Speech assignment
+4. Morphological decomposition: reducing words to their roots, or in the case of compound words to their component parts
+5. Chunking: identifying phrases 
+
+(summarized from Natural language processing: an introduction by Prakash M Nadkarni, at [http://dx.doi.org/10.1136/amiajnl-2011-000464](http://dx.doi.org/10.1136/amiajnl-2011-000464)))
+
+Other tasks can include spelling corrections, language detection and profanity filtering.
+
+ 
+
+## Exploratory Analysis
+
+
+```{r word_counts, echo=F}
+source('get_wordcounts.R')
+```
+
+### File Summaries
+Although we are provided with files containing news, Tweets, and blog posts, we are specifically instructed in Task 0 to consider the blog files only. We first calculate some basic measures of the files from the four languages. In the table below we see these basic measures sorted by the average number of words per blog entry. It is interesting to note that the Russian blog entries in the data set have on average far fewer words than the English entries. Those words however tend to be longer.
+
+The final column which shows the average number of bytes per text character illustrates another concern with text processing. In plain English text, each letter can ideally be described with one byte of ASCII code. In languages such as German and Finnish the bulk of the letters in the alphabetic can be described with one byte, and only the accented characters require multiple bytes. In the Russian cyrillic, most every character must be represented by two bytes. Note that since the English text is not precisely equal to 1.0 there are some multibyte characters in the text. These could either be non-ASCII punctuation, or some foreign language entries accidentally contained within. In order to keep the application as general purpose as possible special attention must be paid to how we deal with non-ASCII characters.
+
+
+```{r wc_summary, echo=F, warning=FALSE}
+
+wcsum=data.frame(language=revalue(wcdf$language,
+                                  c("de_DE"="German",
+                                    "en_US"="American English",
+                                    "fi_FI"='Finnish',
+                                    'ru_RU'='Russian')),
+                 lines=prettyK(wcdf$lines),
+                 words=prettyK(wcdf$words),
+                 avwords=round(wcdf$words/wcdf$lines,1),
+                 wordlength=round(wcdf$characters/wcdf$words,1),
+                 density=round(wcdf$density,2)
+                 )
+wctable=kable(wcsum[order(wcsum$words),],row.names=F,
+              col.names=c("Blog Language","blog entry count","Total Number of Words","Average words per blog entry",
+                          "average word length","bytes per character"),
+              align='c')                 
+```
+`r wctable`
+
+### Data Preparation
+
+#### Sampling
+
+For the remainder of the analysis we will only consider the English blog entries. The first thing to be done is to randomly split the entries into bulk training (75%) and test (25%) sets. This leaves nearly 675,000 blog entries for training purposes. Part of the exploration in this document and in future work will include estimating how many of these entries will actually need to be part of the final training set. Informed by this estimate, the test dataset will be partitioned into repeatable test and validation sets. For the rest of the analysis in this document, we will take a 50,000 line sample of the bulk training dataset for further exploratory use. As can be seen in the table below, the sampling maintains with close agreement the simple measures for each of the data sets.
+
+``` {r splitdata, echo=F}
+source('split_data.R')
+ttsum=data.frame(ttdf$filename,
+                 lines=prettyK(ttdf$lines),
+                 words=round(ttdf$words/ttdf$lines,1),
+                 wordlength=round(ttdf$characters/ttdf$words,1),
+                 density=round(ttdf$density,2)
+                 )
+tttable=kable(ttsum,row.names=F,
+              col.names=c("file name","blog entry count","Average words per blog entry",
+                          "average word length","bytes per character"),
+              align='c')                 
+
+```
+
+`r tttable`
+
+#### Exploration
+
+```{r tokenize, echo=F}
+source('tokenize.R')
+```
+
+With the exploratory dataset thus trimmed down to reasonable size, we can go about processing the data. A series of Unix command line utilities are applied to clean the text of spurious punctuation, numbers and extra whitespace. Profane words are replaced with the token 'kittens' at this time, using a list obtained from [https://gist.github.com/ryanlewis/a37739d710ccdb4b406d](https://gist.github.com/ryanlewis/a37739d710ccdb4b406d). These words were forked by Ryan Lewis from a list scraped from some Google code by Jamie Wilkinson. Frequency lists of single, double, and triple words are also created. 
+(The tokenization steps used here were inspired by a website written by Greg Ichneumon Brown at [http://gibrown.com/2013/01/26/unix-bi-grams-tri-grams-and-topic-modeling/](http://gibrown.com/2013/01/26/unix-bi-grams-tri-grams-and-topic-modeling/).)
+
+```{r setdist, echo=F}
+incl_per=function(nvector, cuts) {
+  incl=100*unlist(lapply(cuts,function(x) sum(nvector==x)/length(nvector)))
+  incl
+}
+cuts=seq(1,4)
+tfraction=data.frame(count=cuts,
+                     wordfreq=incl_per(wordlist$V1,cuts),
+                     bigramfreq=incl_per(bigrams$V1,cuts),
+                     trigramfreq=incl_per(trigrams$V1,cuts))
+ttable=kable(tfraction,digits=1, row.names=FALSE,col.names=c('count','words (%)','bigrams (%)','trigrams (%)'))
+```
+
+After this processing the data we have to consider includes `r prettyK(length(wordlist$V1))` words, `r prettyK(length(bigrams$V1))` bigrams and `r prettyK(length(trigrams$V1))` trigrams. Let us look at the distributions of these sets. The plot below shows what amounts to a histogram of the distribution of word counts across the dataset. The y axis, on a log scale, shows that many of the words, approximately 1/2, only occur once in the list.
+
+```{r plothisto}
+plot(wordlist$V1,log='y',xlab = 'words', ylab='counts of words', type='h',main = 'Frequency of word occurrence')
+```
+
+The table below shows this same information in tabular form for each of the token groups. For example, `r round(tfraction$wordfreq[1],1)`% of words show up only once in the list and `r round(tfraction$wordfreq[4],1)`% of words show up 4 times in the list. Bi-grams and tri-grams show an even more marked set of combinations only showing up 1 time. For the purposes of this exploration we will assume that any words or n-grams that show up only once or twice are not to be considered. This also serves as a rough filtering for foreign language words which are contained in the document since 
+the source data has already done some filtering, and we assume that any foreign words that remain are rare.
+`r ttable`
+A quick examination of the training datasetuse convenience functions from the tm package (Ingo Feinerer and Kurt Hornik (2015). tm: Text Mining Package. R package version 0.6-2. [http://CRAN.R-project.org/package=tm](http://CRAN.R-project.org/package=tm)) to further explore.
+
+
+
+
+Note twitter punctation hashtags, asterix emphasis.
+note news seems to have multiple non-ascii quotes. check for other common non-ascii.
+need to keep all in utf-8 if hope to have international use
+## stats for files
+## histograpms
+
+## goals for app
+
+You can also embed plots, for example:
+
+```{r load_libraries, echo=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+```
+
+## Basic wordcounts
+
+
+## Explore encoding
+
+Examination of the English files, especially the news, revealed a considerable number of unique punctuation marks. For example, in a professionally typeset document an opening quote and closing quote are different characters.
+
+## Explore synonyms
+
+<div>
+### Simple Quote: "
+
+### Fancy Quotes: &ldquo;Quote&rdquo;
+</div>
+
+A complete solution to this issue would convert these quotes from 
+
+for the purposes of data exploration, we will instead simply remove from consideration lines which contain unicode. This also serves to strip out some of the foreign language references which may have snuck into the English dataset.
+
+Also explore stringi conversions
+
+twitter check __truncated__
