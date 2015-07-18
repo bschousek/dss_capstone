@@ -43,7 +43,7 @@ if(.Platform$OS.type=="windows") {
 } else {
   basedir='~'
   datadir='coursera/data/final'
-  fnames=dir(file.path(basedir,datadir),pattern="*blogs.txt",full.names=TRUE,recursive=TRUE)
+  fnames=dir(file.path(basedir,datadir),pattern="*.txt",full.names=TRUE,recursive=TRUE)
   #remove the small sample files generated as part of exploratory analysis for CPU usage
   fnames=fnames[!grepl('small',fnames)]
   #if wordcounts.rdata exists, load it. Otherwise, generate it
@@ -52,8 +52,9 @@ if(.Platform$OS.type=="windows") {
     load('wordcounts.rdata')
   } else {
     
-  wcdf=get_wordcounts(fnames)
-  save(wcdf,file='wordcounts.rdata')
+  wcdf_blogs=get_wordcounts(fnames[grepl('blog',fnames)])
+  wcdf_english=get_wordcounts(fnames[grepl('en_US',fnames)])
+  save(wcdf_blogs,wcdf_english,file='wordcounts.rdata')
   }
 }
 
